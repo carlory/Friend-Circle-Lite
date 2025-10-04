@@ -12,6 +12,10 @@ jobs:
   friend-circle-lite:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: write
+      packages: write
+
     steps:
     - name: Pull Latest Repository
       uses: actions/checkout@v4
@@ -79,12 +83,41 @@ jobs:
         git commit -m "⏱️ $(date +"%Y年%m月%d日-%H时%M分") GitHub Actions定时更新"
         git push --force https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:page
 
+    - name: Log into registry ghcr.io
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+  
+    - name: Build and Push Docker Image
+      run: |
+        docker build -t ghcr.io/${{ github.actor }}/friend-circle-lite:latest .
+        docker push ghcr.io/${{ github.actor }}/friend-circle-lite:latest
+
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v4
+      with:
+        version: v1.33.4
+
+    - name: Configure kubeconfig
+      run: |
+        mkdir -p $HOME/.kube
+        echo "${{ secrets.KUBECONFIG_DATA }}" | base64 -d > $HOME/.kube/config
+
+    - name: Test connection
+      run: kubectl get nodes
+    - name: Deploy blog to Kubernetes
+      run: |
+        kubectl -n blog apply -f k3s/friend-circle-lite.yaml
+        kubectl -n blog rollout restart deployment/friend-circle-lite
+        kubectl -n blog rollout status deployment/friend-circle-lite
+
     - name: Delete Workflow Runs
       uses: Mattraks/delete-workflow-runs@v2
       with:
         retain_days: 30
         keep_minimum_runs: 6
-
   keepalive-workflow:
     name: Keepalive Workflow
     if: ${{ always() }}
